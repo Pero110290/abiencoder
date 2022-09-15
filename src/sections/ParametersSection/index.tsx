@@ -15,7 +15,7 @@ import FormGroup from "../../components/FormGroup";
 import "./ParametersSection.css";
 import MethodInputs from "./MethodInputs";
 import Select from "../../components/Select";
-import { getStructType, isStructInput } from "../../utils";
+import { getStructType, isStructInput, hasFixedLengthArrayInput } from "../../utils";
 import { pushGtagChooseFunction, pushGtagParsesActionButton } from "../../utils/gtag";
 
 interface ParametersSectionProps {
@@ -65,8 +65,25 @@ const getStructOptions = (fn?: AbiItem) => {
   });
 };
 
+const getFixedLengthArrayOptions = (fn?: AbiItem) => {
+  const inputs = fn ? fn.inputs || [] : [];
+  const arrays = inputs.filter((input: AbiInput) => hasFixedLengthArrayInput(input) && !isStructInput(input));
+
+  return arrays.map((array: AbiInput) => {
+    const type = array.internalType || '';
+    const label = type[0].toUpperCase() + type.slice(1)
+
+    return {
+      value: array.internalType,
+      label
+    }
+  });
+};
+
 const getArgumentOptions = (fn: any) => {
   const structOptions = getStructOptions(fn);
+  const fixedLengthArrayOptions = getFixedLengthArrayOptions(fn);
+
   return [
     { value: "address", label: "Address" },
     { value: "address[]", label: "Address[]" },
@@ -76,6 +93,7 @@ const getArgumentOptions = (fn: any) => {
     ...generateUintOptions(),
     ...generateBytesOptions(),
     ...structOptions,
+    ...fixedLengthArrayOptions
   ];
 };
 
@@ -106,6 +124,14 @@ const getFunctionOptions = (abiFunctions: any) => {
 
   return typesOptions;
 };
+
+const checkIfFunctionIsCustom = (value: any, abiFunctions: any) => {
+  const { funcName, type } = value;
+  const isConstructor = type === AbiTypeEnum.CONSTRUCTOR;
+  const isCustomConstructor = (isConstructor && !Object.keys(abiFunctions).length);
+  const isCustomFunction = (!isConstructor && !abiFunctions[funcName] && !abiFunctions[type]);
+  return isCustomConstructor || isCustomFunction;
+}
 
 const ParametersSection: React.FC<ParametersSectionProps> = ({
   abiFunctions,
@@ -168,13 +194,11 @@ const ParametersSection: React.FC<ParametersSectionProps> = ({
   };
 
   const isConstructor = value.type === AbiTypeEnum.CONSTRUCTOR;
-  const isCustomFunction =
-    (isConstructor && !Object.keys(abiFunctions).length) ||
-    (!isConstructor && !abiFunctions[value.funcName]);
+  const isCustomFunction = useMemo(() => checkIfFunctionIsCustom(value, abiFunctions), [value, abiFunctions]);
   const functionOptions = useMemo(() => getFunctionOptions(abiFunctions), [
     abiFunctions,
   ]);
-  const funcKey = value.funcName || value.type;
+  const funcKey = value.type // value.funcName || value.type;
   const argumentOptions = useMemo(
     () => getArgumentOptions(abiFunctions[funcKey]),
     [abiFunctions, funcKey]
@@ -206,6 +230,7 @@ const ParametersSection: React.FC<ParametersSectionProps> = ({
               placeholder="Enter function name without arguments"
               type="text"
               name="listen"
+              disabled={!isCustomFunction}
             />
           )}
         </div>
